@@ -1,8 +1,11 @@
+"""Preprocessing helpers for preparing model input."""
+
 import pandas as pd
 import json
-from typing import List
 
 def prepare_feature_input(event: dict) -> pd.DataFrame:
+    """Convert a JSON event into a DataFrame suitable for feature extraction."""
+
     # parse san_identities string into list
     san_list = json.loads(event["san_identities"]) if isinstance(event["san_identities"], str) else event["san_identities"]
     domain_created_date = json.loads(event["domain_created"]) if isinstance(event["domain_created"], str) else event["domain_created"]

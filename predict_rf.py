@@ -1,3 +1,5 @@
+"""Prediction helper that loads RandomForest models and scores domains."""
+
 import pandas as pd
 import joblib
 
@@ -38,8 +40,7 @@ model_a = joblib.load(MODEL_A_PATH)
 model_b = joblib.load(MODEL_B_PATH)
 
 def predict_malicious(df: pd.DataFrame) -> pd.DataFrame:
-    """Returns a DataFrame of predictions using model_a for null creation_date and model_b otherwise,
-    including which model was used for each row."""
+    """Score each row and indicate which model was used."""
 
     input_df = df[SELECTED_FEATURES].copy()
     features_only = input_df.drop(columns=['parsed_domainname'], errors='ignore')
