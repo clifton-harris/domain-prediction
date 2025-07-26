@@ -11,18 +11,18 @@ class DomainFeatureExtractor:
 
     def __init__(self, whitelist):
         """Create a new extractor using a list of known benign domains."""
-        self.whitelist = whitelist
-        self.whitelist_tokens = self.tokenize_all(whitelist)
-        self.token_counts = Counter(
-            [t for sub in self.whitelist_tokens for t in sub]
-        )
-        self.safe_tokens = set(
-            [token for token, _ in self.token_counts.most_common(100000)]
-        )
+        self.set_whitelist(whitelist)
 
     def set_whitelist(self, whitelist):
         """Update the whitelist for this instance."""
-        self.__init__(whitelist)
+        self.whitelist = whitelist
+        self.whitelist_tokens = self.tokenize_all(whitelist)
+        self.token_counts = Counter(
+            t for sub in self.whitelist_tokens for t in sub
+        )
+        self.safe_tokens = set(
+            token for token, _ in self.token_counts.most_common(100000)
+        )
 
     def tokenize_domain(self, domain):
         """Split a domain into tokens separated by dots or dashes."""
