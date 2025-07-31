@@ -1,0 +1,6 @@
+pandas
+joblib
+boto3
+jellyfish
+scikit-learn
+pytest

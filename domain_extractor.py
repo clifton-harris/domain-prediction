@@ -1,68 +1,101 @@
+"""Utility class for deriving domain related features used in predictions."""
+
 import re
-import time
-import json
 import math
 from collections import Counter
 import pandas as pd
-#from scipy.stats import entropy
 import jellyfish
 
 class DomainFeatureExtractor:
+    """Extracts domain related features for a prediction model."""
+
     def __init__(self, whitelist):
-        self.whitelist = whitelist
-        self.whitelist_tokens = self.tokenize_all(whitelist)
-        self.token_counts = Counter([t for sub in self.whitelist_tokens for t in sub])
-        self.safe_tokens = set([token for token, _ in self.token_counts.most_common(100000)])
+        """Create a new extractor using a list of known benign domains."""
+        self.set_whitelist(whitelist)
 
     def set_whitelist(self, whitelist):
-        self.__init__(whitelist)
+        """Update the whitelist for this instance."""
+        self.whitelist = whitelist
+        self.whitelist_tokens = self.tokenize_all(whitelist)
+        self.token_counts = Counter(
+            t for sub in self.whitelist_tokens for t in sub
+        )
+        self.safe_tokens = set(
+            token for token, _ in self.token_counts.most_common(100000)
+        )
 
     def tokenize_domain(self, domain):
-        return re.split(r'[\.\-/_]', domain.lower())
+        """Split a domain into tokens separated by dots or dashes."""
+        return re.split(r"[\.\-/_]", domain.lower())
 
     def tokenize_all(self, domains):
+        """Tokenize a list of domains."""
         return [self.tokenize_domain(d) for d in domains if isinstance(d, str)]
 
     def calc_entropy(self, domain):
+        """Return the Shannon entropy for the domain string."""
         counts = Counter(domain)
         probs = [count / len(domain) for count in counts.values()]
         return -sum(p * math.log2(p) for p in probs if p > 0)
 
     def suspicious_keyword_present(self, domain):
-        keywords = ['secure', 'login', 'update', 'account', 'verify', 'apple', 'bank', 'gmail', 'yahoo', 'paypal']
+        """Check for common phishing keywords in the domain."""
+        keywords = [
+            "secure",
+            "login",
+            "update",
+            "account",
+            "verify",
+            "apple",
+            "bank",
+            "gmail",
+            "yahoo",
+            "paypal",
+        ]
         return int(any(kw in domain.lower() for kw in keywords))
 
     def suspicious_tld(self, domain):
-        bad_tlds = ['xyz', 'top', 'loan', 'click', 'gq', 'ml', 'cf', 'tk']
-        return int(domain.split('.')[-1] in bad_tlds)
+        """Flag commonly abused top level domains."""
+        bad_tlds = ["xyz", "top", "loan", "click", "gq", "ml", "cf", "tk"]
+        return int(domain.split(".")[-1] in bad_tlds)
 
     def has_unusual_token(self, domain):
+        """Detect tokens not present in the whitelist."""
         tokens = set(self.tokenize_domain(domain))
         return int(any(token not in self.safe_tokens for token in tokens))
 
     def max_jaro_winkler_similarity(self, domain):
-        return max(jellyfish.jaro_winkler_similarity(domain, ref) for ref in self.whitelist)
+        """Compute the maximum Jaro-Winkler similarity to whitelist domains."""
+        return max(
+            jellyfish.jaro_winkler_similarity(domain, ref) for ref in self.whitelist
+        )
 
     def clean_domain(self, domain):
+        """Remove wildcards and www prefix from the domain."""
         if not isinstance(domain, str):
             return ""
         domain = domain.replace("*.", "")
         return re.sub(r"^www\.", "", domain)
-    
+
     def has_inner_tld(self, domain):
-        tlds = ['.com', '.net', '.org']
+        """Check if the domain contains nested TLDs such as 'com' inside."""
+        tlds = [".com", ".net", ".org"]
         return int(any(tld in domain[:-len(tld)] for tld in tlds))
 
     def count_hyphens(self, domain):
-        return domain.count('-')
+        """Count the number of hyphens in the domain."""
+        return domain.count("-")
 
     def count_subdomains(self, domain):
-        return len(domain.split('.')) - 2 if '.' in domain else 0
-    
+        """Return the number of subdomains present."""
+        return len(domain.split(".")) - 2 if "." in domain else 0
+
     def is_deeply_nested(self,domain, threshold=4):
+        """Flag domains with many nested subdomains."""
         return int(self.count_subdomains(domain) >= threshold)
 
     def extract(self, df):
+        """Compute all model features for the supplied DataFrame."""
         df['clean_domain'] = df['parsed_domainname'].apply(self.clean_domain)
         df["not_before"] = pd.to_datetime(df["not_before"])
         df["not_after"] = pd.to_datetime(df["not_after"])
@@ -125,7 +158,7 @@ class DomainFeatureExtractor:
             'ca_name_Sectigo',
             'max_jaro_winkler_similarity',
             'domain_age_days'
-            
-        ]        
+
+        ]
         df = df.loc[:, selected_features]
         return df

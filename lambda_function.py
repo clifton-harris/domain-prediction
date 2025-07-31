@@ -1,47 +1,62 @@
-#import psutil, os
+"""AWS Lambda entry point for domain prediction service."""
+
 import json
+import logging
+import os
+from io import BytesIO
+
 import boto3
 import joblib
 import pandas as pd
-from io import BytesIO
+
 from domain_extractor import DomainFeatureExtractor
 from preprocess import prepare_feature_input
-#print(f"Memory after imports: {psutil.Process(os.getpid()).memory_info().rss / 1024**2:.2f} MB")
 
 from predict_rf import predict_malicious
-#print(f"Memory after model: {psutil.Process(os.getpid()).memory_info().rss / 1024**2:.2f} MB")
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 # Load whitelist and model at cold start
 s3 = boto3.client("s3")
-bucket = "capstonedata05212025"
-whitelist_key = "feature_extractor/running_whitelist_100k.csv"
+bucket = os.environ.get("WHITELIST_BUCKET", "capstonedata05212025")
+whitelist_key = os.environ.get(
+    "WHITELIST_KEY", "feature_extractor/running_whitelist_100k.csv"
+)
 
-# Load whitelist from S3
-obj = s3.get_object(Bucket=bucket, Key=whitelist_key)
-whitelist_df = pd.read_csv(obj["Body"])
-whitelist = whitelist_df["domain"].dropna().unique().tolist()
+try:
+    obj = s3.get_object(Bucket=bucket, Key=whitelist_key)
+    whitelist_df = pd.read_csv(obj["Body"])
+    whitelist = whitelist_df["domain"].dropna().unique().tolist()
+    logger.info("Whitelist loaded from S3 with %d entries", len(whitelist))
+except Exception as exc:  # pragma: no cover - network errors
+    logger.error("Failed to load whitelist from S3: %s", exc)
+    whitelist = []
 #print(f"Memory after whitelist: {psutil.Process(os.getpid()).memory_info().rss / 1024**2:.2f} MB")
 
 # Initialize extractor once
 extractor = DomainFeatureExtractor(whitelist)
 #print(f"Memory after DomainFeatureExtractor: {psutil.Process(os.getpid()).memory_info().rss / 1024**2:.2f} MB")
 
-def load_pickle_from_s3(bucket, key):
-    s3 = boto3.client('s3')
+def load_pickle_from_s3(bucket: str, key: str):
+    """Load a pickled object from S3."""
+    s3 = boto3.client("s3")
     obj = s3.get_object(Bucket=bucket, Key=key)
-    return joblib.load(BytesIO(obj['Body'].read()))
+    return joblib.load(BytesIO(obj["Body"].read()))
 
-def load_whitelist_from_s3(bucket, key):
-    s3 = boto3.client('s3')
+def load_whitelist_from_s3(bucket: str, key: str):
+    """Retrieve a whitelist CSV from S3."""
+    s3 = boto3.client("s3")
     obj = s3.get_object(Bucket=bucket, Key=key)
-    df = pd.read_csv(obj['Body'])
-    return df['domain'].dropna().unique().tolist()
+    df = pd.read_csv(obj["Body"])
+    return df["domain"].dropna().unique().tolist()
 
 #import json
 #from preprocess import prepare_feature_input
 
 def lambda_handler(event, context):
-    import json
+    """Handle Lambda invocation and return predictions."""
+
+    logger.info("Received event")
 
     # 🧩 If event is a string (e.g., from test console), parse it
     if isinstance(event, str):
@@ -72,6 +87,7 @@ def lambda_handler(event, context):
             predictions = predict_malicious(df_features)
             predictions_f = predictions[['parsed_domainname', 'prediction','model_used']]
             all_results.extend(json.loads(predictions_f.to_json(orient="records")))
+        logger.info("Processed %d records", len(all_results))
         return {
             "statusCode": 200,
             "body": json.dumps({"features": all_results})
@@ -83,6 +99,7 @@ def lambda_handler(event, context):
     predictions = predict_malicious(df_features)
     predictions_f = predictions[['parsed_domainname', 'prediction','model_used']]
 
+    logger.info("Processed single record")
     return {
         "statusCode": 200,
         "body": json.dumps({"features": json.loads(predictions_f.to_json(orient="records"))})
@@ -90,8 +107,7 @@ def lambda_handler(event, context):
 
 
 if __name__ == "__main__":
-    import json
     with open("test_event.json") as f:
         event = json.load(f)
     result = lambda_handler(event, None)
-    print(json.dumps(result, indent=2))
+    logger.info(json.dumps(result, indent=2))
